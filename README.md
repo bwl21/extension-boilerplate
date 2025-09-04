@@ -4,7 +4,8 @@ With this project you get a boilerplate for building your own plugin for [Church
 
 ## Configuration
 
-In the `.env` you can configure the necessary constants to start with your project. With that, the ChurchTools-Client is ready to go and you can start using the ChurchTools-API. **Make sure you do include it in `.gitignore`!**
+Copy `.env-example` to `.env` and fill in your data.
+In the `.env` you can configure the necessary constants to start with your project. With that, the ChurchTools-Client is ready to go and you can start using the ChurchTools-API. The `.env` is included in `.gitignore` and should never be checked in into a public repository!
 
 So: Happy coding
 
