@@ -8,6 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "deploy": "npm run build && node scripts/package.js",
+    "document-session": "node scripts/document-session.js",
+    "document-session:interactive": "node scripts/document-session.js --interactive",
+    "document-session:template": "node scripts/document-session.js --template-only",
     "prettier:check": "prettier --check .",
     "prettier:write": "prettier --write ."
   },
