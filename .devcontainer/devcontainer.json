@@ -1,37 +1,22 @@
-// The Dev Container format allows you to configure your environment. At the heart of it
-// is a Docker image or Dockerfile which controls the tools available in your environment.
-//
-// See https://aka.ms/devcontainer.json for more information.
 {
-  "name": "Ona",
-  // Use "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
-  // instead of the build to use a pre-built image.
-  "build": {
-    "context": ".",
-    "dockerfile": "Dockerfile"
-  },
-  // Features add additional features to your environment. See https://containers.dev/features
+  "name": "ChurchTools Extension",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": {
-      "nodeGypDependencies": true,
-      "version": "20"
-    },
-    "ghcr.io/devcontainers/features/github-cli:1": {
-      "installDirectlyFromGitHubRelease": true,
-      "version": "latest"
-    }
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-
-  // VS Code extensions to install automatically
+  "postCreateCommand": "npm install",
   "customizations": {
     "vscode": {
       "extensions": [
         "Vue.volar",
-        "Vue.vscode-typescript-vue-plugin",
-        "bradlc.vscode-tailwindcss",
         "esbenp.prettier-vscode",
-        "ms-vscode.vscode-typescript-next"
-      ]
+        "dbaeumer.vscode-eslint"
+      ],
+      "settings": {
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnSave": true
+      }
     }
-  }
+  },
+  "forwardPorts": [5173]
 }
