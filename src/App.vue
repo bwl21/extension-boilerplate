@@ -1,103 +1,98 @@
 <template>
   <div id="app">
-    <div class="container">
-      <h1>ChurchTools Extension Boilerplate</h1>
-      <p>Welcome {{ user?.firstName }} {{ user?.lastName }}!</p>
-      
-      <!-- Example usage of boilerplate components -->
-      <div class="components-demo">
-        <BaseCard title="Example Card" :loading="loading">
-          <p>This is an example of the BaseCard component from the boilerplate.</p>
-          <button @click="showExampleToast" type="button" class="btn btn-primary">
-            Show Toast Example
-          </button>
-        </BaseCard>
+    <!-- Tab Navigation -->
+    <nav class="app-nav">
+      <button
+        type="button"
+        class="nav-tab"
+        :class="{ active: activeTab === 'generator' }"
+        @click="activeTab = 'generator'"
+      >
+        Flyer Generator
+      </button>
+      <button
+        type="button"
+        class="nav-tab"
+        :class="{ active: activeTab === 'admin' }"
+        @click="activeTab = 'admin'"
+      >
+        Admin – Vorlagen
+      </button>
+    </nav>
 
-        <BaseCard title="ColorPicker Example" class="mt-3">
-          <div class="mb-3">
-            <label class="form-label">Select a color:</label>
-            <ColorPicker v-model="selectedColor" />
-          </div>
-          <p v-if="selectedColor">Selected color: {{ selectedColor }}</p>
-        </BaseCard>
-      </div>
-    </div>
+    <!-- Content -->
+    <main class="app-content">
+      <FlyerGenerator v-if="activeTab === 'generator'" />
+      <TemplateAdmin v-else-if="activeTab === 'admin'" />
+    </main>
 
-    <!-- Toast container -->
     <Toast />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import BaseCard from './components/common/BaseCard.vue'
-import ColorPicker from './components/common/ColorPicker.vue'
+import { ref } from 'vue'
+import FlyerGenerator from './components/flyer-generator/FlyerGenerator.vue'
+import TemplateAdmin from './components/admin/TemplateAdmin.vue'
 import Toast from './components/common/Toast.vue'
-import { useToast } from './composables/useToast'
-import { churchtoolsClient } from './services/churchtools'
-import type { Person } from './ct-types'
 
-const { showToast } = useToast()
-const loading = ref(false)
-const user = ref<Person | null>(null)
-const selectedColor = ref('')
-
-const showExampleToast = () => {
-  showToast('Success!', 'This is an example toast notification from the boilerplate.', 'success')
-}
-
-onMounted(async () => {
-  try {
-    loading.value = true
-    user.value = await churchtoolsClient.get<Person>('/whoami')
-  } catch (error) {
-    console.error('Failed to load user:', error)
-    showToast('Error', 'Failed to load user information', 'error')
-  } finally {
-    loading.value = false
-  }
-})
+type TabId = 'generator' | 'admin'
+const activeTab = ref<TabId>('generator')
 </script>
 
-<style scoped>
-.container {
-  max-width: 800px;
-  margin: 0 auto;
-  padding: 20px;
+<style>
+/* Reset and base styles */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
 }
 
-.components-demo {
-  margin-top: 20px;
-}
-
-.mt-3 {
-  margin-top: 1rem;
-}
-
-.mb-3 {
-  margin-bottom: 1rem;
-}
-
-.btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
   font-size: 14px;
+  line-height: 1.5;
+  color: #1f2937;
+  background-color: #f3f4f6;
 }
 
-.btn-primary {
-  background-color: #007bff;
-  color: white;
+#app {
+  min-height: 100vh;
 }
 
-.btn-primary:hover {
-  background-color: #0056b3;
+.app-nav {
+  display: flex;
+  gap: 0;
+  background: white;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 0 1rem;
 }
 
-.form-label {
-  display: block;
-  margin-bottom: 8px;
+.nav-tab {
+  padding: 1rem 1.5rem;
+  border: none;
+  background: transparent;
+  font-size: 0.875rem;
   font-weight: 500;
+  color: #6b7280;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.15s ease;
+}
+
+.nav-tab:hover {
+  color: #374151;
+  background: #f9fafb;
+}
+
+.nav-tab.active {
+  color: #3b82f6;
+  border-bottom-color: #3b82f6;
+}
+
+.app-content {
+  padding: 1rem;
 }
 </style>

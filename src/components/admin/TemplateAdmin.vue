@@ -1,0 +1,542 @@
+<template>
+  <div class="template-admin">
+    <header class="admin-header">
+      <h1>Admin – Vorlagensets</h1>
+    </header>
+
+    <div class="admin-content">
+      <!-- Template Set Management -->
+      <section class="section-card">
+        <h2 class="section-title">Aktives Vorlagenset</h2>
+        <div class="template-set-actions">
+          <span class="template-set-name">{{ templateSetName }}</span>
+          <label class="btn btn-secondary">
+            Hochladen...
+            <input type="file" accept=".zip" @change="handleUploadTemplateSet" hidden />
+          </label>
+        </div>
+      </section>
+
+      <!-- Templates List -->
+      <section class="section-card">
+        <h2 class="section-title">Vorlagen im Set</h2>
+        <div class="templates-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Format</th>
+                <th>Felder</th>
+                <th>Aktionen</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="entry in templateEntries" :key="entry.id">
+                <td>{{ entry.id }}</td>
+                <td>{{ entry.name }}</td>
+                <td class="fields-cell">{{ entry.fields.join(', ') }}</td>
+                <td>
+                  <button
+                    type="button"
+                    class="btn btn-primary btn-sm"
+                    @click="openEditor(entry.id)"
+                  >
+                    Bearbeiten
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-actions">
+          <button type="button" class="btn btn-secondary" @click="addNewLayout">
+            Neues Layout hinzufügen
+          </button>
+          <button type="button" class="btn btn-secondary" @click="downloadTemplateSet">
+            Vorlagenset als ZIP herunterladen
+          </button>
+        </div>
+      </section>
+
+      <!-- Status -->
+      <div v-if="status" class="status-card" :class="statusClass">
+        {{ status }}
+      </div>
+    </div>
+
+    <!-- Editor Modal -->
+    <div v-if="editorVisible" class="editor-modal">
+      <div class="editor-modal-content">
+        <div class="editor-header">
+          <h3>Template bearbeiten: {{ editingTemplateId }}</h3>
+          <div class="editor-actions">
+            <button type="button" class="btn btn-primary" @click="saveTemplate">
+              Speichern
+            </button>
+            <button type="button" class="btn btn-secondary" @click="closeEditor">
+              Schließen
+            </button>
+          </div>
+        </div>
+        <div ref="editorContainer" class="editor-container"></div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, computed, onUnmounted, nextTick } from 'vue'
+import { Designer } from '@pdfme/ui'
+import { text, barcodes } from '@pdfme/schemas'
+import type { Template } from '@pdfme/common'
+import JSZip from 'jszip'
+import type { LayoutFormat, TemplateSetEntry, TemplateSet } from '../../types/flyer'
+import { LAYOUT_CONFIGS } from '../../types/flyer'
+import { getTemplate, getAllTemplates } from '../../services/pdfme-templates'
+
+// State
+const templateSetName = ref('default-church-flyers')
+const templateEntries = ref<TemplateSetEntry[]>([])
+const status = ref('')
+const statusType = ref<'info' | 'success' | 'error'>('info')
+
+const editorVisible = ref(false)
+const editingTemplateId = ref<LayoutFormat | null>(null)
+const editorContainer = ref<HTMLDivElement | null>(null)
+let designer: Designer | null = null
+
+const statusClass = computed(() => ({
+  'status-info': statusType.value === 'info',
+  'status-success': statusType.value === 'success',
+  'status-error': statusType.value === 'error',
+}))
+
+// Initialize with default templates
+const initializeTemplates = () => {
+  const allTemplates = getAllTemplates()
+  templateEntries.value = Object.entries(allTemplates).map(([id, template]) => {
+    const config = LAYOUT_CONFIGS[id as LayoutFormat]
+    const fields = template.schemas[0]?.map((s) => s.name) || []
+    return {
+      id: id as LayoutFormat,
+      name: config.name,
+      format: `${config.width}×${config.height}mm`,
+      fields,
+      template,
+    }
+  })
+}
+
+initializeTemplates()
+
+// Status helper
+const setStatus = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
+  status.value = message
+  statusType.value = type
+  if (type !== 'error') {
+    setTimeout(() => {
+      if (status.value === message) {
+        status.value = ''
+      }
+    }, 3000)
+  }
+}
+
+// Prepare template for Designer (convert basePdf object to serializable format)
+const prepareTemplateForDesigner = (template: Template): Template => {
+  // Deep clone the template to avoid mutation
+  const cloned = JSON.parse(JSON.stringify(template))
+  return cloned
+}
+
+// Open pdfme Designer
+const openEditor = async (templateId: LayoutFormat) => {
+  editingTemplateId.value = templateId
+  editorVisible.value = true
+
+  await nextTick()
+
+  const entry = templateEntries.value.find((e) => e.id === templateId)
+  if (!entry || !editorContainer.value) return
+
+  // Destroy existing designer
+  if (designer) {
+    designer.destroy()
+    designer = null
+  }
+
+  try {
+    // Prepare template - JSON serialize/deserialize to ensure it's cloneable
+    const preparedTemplate = prepareTemplateForDesigner(entry.template)
+
+    designer = new Designer({
+      domContainer: editorContainer.value,
+      template: preparedTemplate,
+      plugins: {
+        Text: text,
+        QRCode: barcodes.qrcode,
+      },
+    })
+  } catch (error) {
+    console.error('Failed to initialize designer:', error)
+    setStatus('Fehler beim Öffnen des Editors', 'error')
+  }
+}
+
+// Save template from editor
+const saveTemplate = () => {
+  if (!designer || !editingTemplateId.value) return
+
+  const updatedTemplate = designer.getTemplate()
+  const entryIndex = templateEntries.value.findIndex((e) => e.id === editingTemplateId.value)
+
+  if (entryIndex !== -1) {
+    const fields = updatedTemplate.schemas[0]?.map((s) => s.name) || []
+    templateEntries.value[entryIndex] = {
+      ...templateEntries.value[entryIndex],
+      fields,
+      template: updatedTemplate,
+    }
+    setStatus('Template gespeichert', 'success')
+  }
+
+  closeEditor()
+}
+
+// Close editor
+const closeEditor = () => {
+  if (designer) {
+    designer.destroy()
+    designer = null
+  }
+  editorVisible.value = false
+  editingTemplateId.value = null
+}
+
+// Upload template set ZIP
+const handleUploadTemplateSet = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  try {
+    const zip = await JSZip.loadAsync(file)
+    const newEntries: TemplateSetEntry[] = []
+
+    // Look for manifest.json or individual template files
+    const manifestFile = zip.file('manifest.json')
+    if (manifestFile) {
+      const manifestContent = await manifestFile.async('string')
+      const manifest = JSON.parse(manifestContent) as TemplateSet
+
+      for (const entry of manifest.templates) {
+        const templateFile = zip.file(`${entry.id}.json`)
+        if (templateFile) {
+          const templateContent = await templateFile.async('string')
+          const template = JSON.parse(templateContent) as Template
+          newEntries.push({
+            ...entry,
+            template,
+          })
+        }
+      }
+
+      templateSetName.value = manifest.name || file.name.replace('.zip', '')
+    } else {
+      // Try to load individual JSON files
+      for (const [filename, zipEntry] of Object.entries(zip.files)) {
+        if (filename.endsWith('.json') && !zipEntry.dir) {
+          const content = await zipEntry.async('string')
+          const template = JSON.parse(content) as Template
+          const id = filename.replace('.json', '') as LayoutFormat
+
+          if (LAYOUT_CONFIGS[id]) {
+            const config = LAYOUT_CONFIGS[id]
+            const fields = template.schemas[0]?.map((s) => s.name) || []
+            newEntries.push({
+              id,
+              name: config.name,
+              format: `${config.width}×${config.height}mm`,
+              fields,
+              template,
+            })
+          }
+        }
+      }
+
+      templateSetName.value = file.name.replace('.zip', '')
+    }
+
+    if (newEntries.length > 0) {
+      templateEntries.value = newEntries
+      setStatus(`${newEntries.length} Vorlagen geladen`, 'success')
+    } else {
+      setStatus('Keine gültigen Vorlagen gefunden', 'error')
+    }
+  } catch (error) {
+    console.error('Failed to load template set:', error)
+    setStatus('Fehler beim Laden des Vorlagensets', 'error')
+  }
+
+  input.value = ''
+}
+
+// Download template set as ZIP
+const downloadTemplateSet = async () => {
+  try {
+    const zip = new JSZip()
+
+    // Create manifest
+    const manifest: TemplateSet = {
+      version: '1.0',
+      name: templateSetName.value,
+      templates: templateEntries.value.map((e) => ({
+        id: e.id,
+        name: e.name,
+        format: e.format,
+        fields: e.fields,
+        template: e.template,
+      })),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    zip.file('manifest.json', JSON.stringify(manifest, null, 2))
+
+    // Add individual template files
+    for (const entry of templateEntries.value) {
+      zip.file(`${entry.id}.json`, JSON.stringify(entry.template, null, 2))
+    }
+
+    const blob = await zip.generateAsync({ type: 'blob' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${templateSetName.value}.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    setStatus('Vorlagenset heruntergeladen', 'success')
+  } catch (error) {
+    console.error('Failed to download template set:', error)
+    setStatus('Fehler beim Herunterladen', 'error')
+  }
+}
+
+// Add new layout (placeholder)
+const addNewLayout = () => {
+  setStatus('Funktion noch nicht implementiert', 'info')
+}
+
+// Cleanup
+onUnmounted(() => {
+  if (designer) {
+    designer.destroy()
+  }
+})
+</script>
+
+<style scoped>
+.template-admin {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+}
+
+.admin-header {
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.admin-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.admin-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.section-card {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  padding: 1rem;
+}
+
+.section-title {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #374151;
+}
+
+.template-set-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.template-set-name {
+  font-family: monospace;
+  background: #f3f4f6;
+  padding: 0.5rem 1rem;
+  border-radius: 0.25rem;
+  flex: 1;
+}
+
+.templates-table {
+  overflow-x: auto;
+  margin-bottom: 1rem;
+}
+
+.templates-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+}
+
+.templates-table th,
+.templates-table td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.templates-table th {
+  background: #f9fafb;
+  font-weight: 600;
+  color: #374151;
+}
+
+.fields-cell {
+  font-family: monospace;
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.table-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.btn {
+  padding: 0.625rem 1rem;
+  border: none;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: #3b82f6;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #2563eb;
+}
+
+.btn-secondary {
+  background-color: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background-color: #e5e7eb;
+}
+
+.btn-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.status-card {
+  padding: 0.75rem 1rem;
+  border-radius: 0.375rem;
+  font-size: 0.875rem;
+}
+
+.status-info {
+  background-color: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+}
+
+.status-success {
+  background-color: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.status-error {
+  background-color: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+/* Editor Modal */
+.editor-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.editor-modal-content {
+  background: white;
+  border-radius: 0.5rem;
+  width: 95vw;
+  height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.editor-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.editor-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.editor-container {
+  flex: 1;
+  overflow: hidden;
+}
+</style>
